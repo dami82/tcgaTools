@@ -1,0 +1,241 @@
+---
+title: "Lu_et_al_2017"
+author: "Damiano Fantini"
+date: "July 5, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+This document describes the code used for generating some of the plots included in the paper *Lu et al (2017?)*. The paper includes a set of analyses of * **TCGA** * data that were retrieved from cBioportal (\url{www.cbioportal.org/}) via the *TCGAretriever* package. The core functions used for the analyses are available online. These require several R libraries from CRAN or bioconductor to be installed: *TCGAretriever*, *survival*, *gplots*, *ggplot2*, *OrganismDbi*, *GO.db*, *Homo.sapiens*.
+
+To get started, run the following line of code.
+```{r getting started, echo=T, message=F, eval=T}
+base::source("http://www.labwizards.com/rlib/tcgaTools.R")
+```
+
+## Question 1: Detect and Visualize Hotspot Mutations
+Here we will discuss about how to identify and visualize hotspot mutation sites in human cancer on a certain gene of interest. The analysis can be run on a specific type of cancer or on all TCGA provisional datasets, by setting the *study.id* argument in the *get_hotspot_mutations()* function. The identifier used to select a specific gene is the *OFFICIAL SYMBOL* of that gene. Two examples are provided.
+```{r getting started b1, echo=T, message=F, eval=T}
+# Gene: KMT2C; all TCGA datasets; automatic binning.
+my.gene <- "KMT2C"
+cur.mutations <- get_hotspot_mutations(gene.symbol = my.gene)
+cur.mut.binned <- mutations_along_seq(mutation.counts = cur.mutations,
+                                      bin = -1)
+hotspot.plot <- plot_binned_mutcounts(mut.binned = cur.mut.binned)
+```
+```{r getting started b2, echo=T, message=F, eval=F}
+hotspot.plot +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+```{r getting started b3, echo=F, message=F, eval=T, size="in", fig.width=5, fig.height=4, fig.align="center"}
+hotspot.plot +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r getting started b4, echo=T, message=F, eval=T}
+# Gene: TP53; only brca_tcga; binning: 5 aa; 
+# only missense mutations; custom color.
+new.gene = "TP53"
+brca.tp53.mut <- get_hotspot_mutations(gene.symbol = new.gene,
+                                       study.id = "brca_tcga")
+new.mut.binned <- mutations_along_seq(mutation.counts = brca.tp53.mut,
+                                      bin = 5)
+hotspot.plot <- plot_binned_mutcounts(mut.binned = new.mut.binned,
+                                      mut.type = "missense",
+                                      colors = c(NA, "chartreuse2"))
+```
+```{r getting started b5, echo=F, message=F, eval=T, size="in", fig.width=5, fig.height=4, fig.align="center"}
+hotspot.plot +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+## Question 2: Detect Mutations in a specific aa range and explore patient survival
+Here we will discuss about how to identify and visualize hotspot mutation sites in human cancer on a certain gene of interest. The analysis can
+#
+#
+# -----------------------------------------------------------------------------
+#   ***   Question 2: Detect Mutations in a specific aa range
+#         and explore patient survival
+# -----------------------------------------------------------------------------
+#
+# Survival of patients with mutation in PHD1,2 Domains of MLL3
+# Dataset, Breast cancer pub (TCGA)
+mll3.surv <- call_mutcases_by_range(gene.symbol = "KMT2C",
+                                    cancer.study = "brca_tcga_pub",
+                                    data.type = "tcga.id",
+                                    clinic.data = NULL,
+                                    window.min = 250,
+                                    window.max = 1400,
+                                    method = "range.alive")
+mll3.surv <- call_survival_by_range (mutcases.list = mll3.surv)
+plot_km_custom(mll3.surv,
+               xlim = c(0,60),
+               ylim = c(0, 1.25),
+               main = paste(label, "{250-1400}"))
+#
+#
+# More complex analysis. Analyze survival in two or more datasets and pool results
+# Define datasets of interest (tcga id), data retrieved from cBio via TCGAretriever
+#
+tcga.ids = c("brca_tcga", "nsclc_tcga_broad_2016")
+label <- "Breast & Lung TCGA cancers (pooled)"
+method = "range.alive" #c("missense.only","range.alive")
+gene.01 <- "KMT2C"
+aarange.01 <- c(250, 1400)
+#
+# "loop" through TCGA datasets
+tcga.patient.survival <- lapply(tcga.ids, (function(csid){
+  #
+  # retrieve survival of patients with mutation in gene 1 (MLL3)
+  gene01.surv <- call_mutcases_by_range(gene.symbol = gene.01,
+                                        cancer.study = csid,
+                                        data.type = "tcga.id",
+                                        clinic.data = NULL,
+                                        window.min = aarange.01[1],
+                                        window.max = aarange.01[2],
+                                        method = method)
+  #
+  # call survival
+  call_survival_by_range (mutcases.list = gene01.surv)
+}))
+tcga.patient.survival <- merge_km_data(km.data.list = tcga.patient.survival)
+plot_km_custom(tcga.patient.survival,
+               xlim = c(0,60),
+               ylim = c(0, 1.25),
+               main = paste(label, "{250-1400}"))
+#
+#
+# Third and most complex analysis of this kind.
+# Analyze survival based on mutation status of 2 genes.
+# Also, analyze two or more datasets and pool results.
+#
+tcga.ids = c("brca_tcga", "nsclc_tcga_broad_2016")
+label <- "Survival based on MLL3 + BAP1 Mutational Status\nBreast & Lung TCGA cancers (provisional)"
+method = "range.alive" #c("missense.only","range.alive")
+gene.01 <- "KMT2C"
+aarange.01 <- c(250, 1400)
+gene.02 <- "BAP1"
+aarange.02 <- c(-1, -1) # no range defined, any mutation will count
+#
+# Loop through different datasets
+surv.2gene <- lapply(tcga.ids, (function(csid){
+  #
+  # retrieve survival of patients with mutation in gene 1 (MLL3)
+  gene01.surv <- call_mutcases_by_range(gene.symbol = gene.01,
+                                        cancer.study = csid,
+                                        data.type = "tcga.id",
+                                        clinic.data = NULL,
+                                        window.min = aarange.01[1],
+                                        window.max = aarange.01[2],
+                                        method = method)
+  #
+  # retrieve survival of patients with mutation in gene 2 (BAP1)
+  gene02.surv <- call_mutcases_by_range(gene.symbol = gene.02,
+                                        cancer.study = csid,
+                                        data.type = "tcga.id",
+                                        clinic.data = NULL,
+                                        window.min = aarange.02[1],
+                                        window.max = aarange.02[2],
+                                        method = method)
+  #
+  # retrieve data relative to gene #2 (BAP1)
+  new.IN <- gene02.surv$calls$case.in
+  new.OUT <- gene02.surv$calls$case.out
+  new.EXCL <- gene02.surv$calls$case.exclude
+  #
+  # Create a final copy (merged)
+  merged.surv <- gene01.surv
+  #
+  # Add cases
+  merged.surv$calls$case.exclude <- unique(c(new.EXCL, merged.surv$calls$case.exclude))
+  merged.surv$calls$case.in <- unique(c(new.IN, merged.surv$calls$case.in))
+  merged.surv$calls$case.out <- unique(c(new.OUT, merged.surv$calls$case.out))
+  #
+  # Remove duplicates
+  merged.surv$calls$case.in <- merged.surv$calls$case.in[!merged.surv$calls$case.in %in%
+                                                           merged.surv$calls$case.exclude]
+  merged.surv$calls$case.out <- merged.surv$calls$case.out[!merged.surv$calls$case.out %in%
+                                                             c(merged.surv$calls$case.exclude,
+                                                               merged.surv$calls$case.in)]
+  merged.surv$calls$case.bckground <- merged.surv$calls$case.bckground[!merged.surv$calls$case.bckground %in%
+                                                                         c(merged.surv$calls$case.exclude,
+                                                                           merged.surv$calls$case.in,
+                                                                           merged.surv$calls$case.out)]
+  #
+  # Done, call survival and return
+  call_survival_by_range(mutcases.list = merged.surv)
+}))
+#
+# Merge data in the list and then plot
+surv.2gene <- merge_km_data(km.data.list = surv.2gene)
+plot_km_custom(surv.2gene,
+               xlim = c(0,60),
+               ylim = c(0, 1.25),
+               main = label,
+               cust.mll3.lab = TRUE)
+#
+# Done!
+#
+#
+# -----------------------------------------------------------------------------
+#   ***   Question 3: Plot a custom Oncoprint for MLL3 and BAP1
+# -----------------------------------------------------------------------------
+#
+# non-small-cell lung cancer dataset; KMT2C and BAP1
+std.oncoprint.nsclc <- std_2gene_oncoprint(csid = "nsclc_tcga_broad_2016", tcga.only = T,
+                                              gene.01 = "KMT2C",
+                                              gene.02 = "BAP1")
+print(std.oncoprint.nsclc$plot)
+cat(std.oncoprint.nsclc$plot.legend)
+#
+# Metabric dataset; KMT2C and BAP1
+std.oncoprint.metabric <- std_2gene_oncoprint(csid = "brca_metabric",
+                                              gene.01 = "KMT2C",
+                                              gene.02 = "BAP1")
+print(std.oncoprint.metabric$plot)
+conting.tab <- std.oncoprint.metabric$count.table
+conting.tab <- conting.tab / sum(conting.tab)
+kmt2c.mutFreq <- sum(conting.tab[2,])
+kmt2c.mutFreq
+bap1.mutFreq <- sum(conting.tab[,2])
+bap1.mutFreq
+#
+# Expected BAP1 + KMT2C mutations if totally independent
+kmt2c.mutFreq <- kmt2c.mutFreq * bap1.mutFreq
+kmt2c.mutFreq
+#
+# Observed BAP1 + KMT2C mutation, lower than expected
+conting.tab[2,2]
+conting.tab[2,2] < kmt2c.mutFreq
+#
+# Fisher test
+fisher.test(std.oncoprint.metabric$count.table,
+            alternative = "less")
+#
+#
+# Alternative Oncoprint (based on disruption or not of a specific domain)
+my.oncoprint <- prep_custom_oncoprint(csid = "brca_tcga",
+                                      gene.01 = "KMT2C",
+                                      aarange.01 = c(250, 1400),
+                                      gene.02 = "BAP1")
+#
+oncoplot <- plot_custom_oncoprint(my.oncoprint)
+print(oncoplot$plot +
+        ggtitle("BRCA custom Oncoprint"))
+cat(oncoplot$plot.legend)
+#
+conting.tab <- my.oncoprint$count.table
+conting.tab <- conting.tab[, -2]
+conting.tab
+fisher.test(conting.tab,
+            alternative = "less")
+#
+#
+# Done, success!
+# For questions: damiano.fantini@gmail.com
+#
+#
